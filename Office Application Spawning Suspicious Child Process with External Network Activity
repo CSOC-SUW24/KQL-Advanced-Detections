@@ -1,4 +1,4 @@
-\\Office Application Spawning Suspicious Child Process with External Network Activity
+//Office Application Spawning Suspicious Child Process with External Network Activity
 DeviceProcessEvents
 | where Timestamp >= ago(30d)
 | where InitiatingProcessFileName in~ (
