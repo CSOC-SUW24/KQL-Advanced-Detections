@@ -1,0 +1,95 @@
+\\Office Application Spawning Suspicious Child Process with External Network Activity
+DeviceProcessEvents
+| where Timestamp >= ago(30d)
+| where InitiatingProcessFileName in~ (
+    "outlook.exe",
+    "winword.exe",
+    "excel.exe",
+    "powerpnt.exe",
+    "onenote.exe"
+)
+| where FileName in~ (
+    "regsvr32.exe",
+    "rundll32.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "cmd.exe",
+    "mshta.exe",
+    "wscript.exe",
+    "cscript.exe",
+    "certutil.exe",
+    "bitsadmin.exe",
+    "wmic.exe",
+    "msiexec.exe"
+)
+| where ProcessCommandLine has_any (
+    "http://",
+    "https://",
+    "-enc",
+    "encodedcommand",
+    "downloadstring",
+    "downloadfile",
+    "scrobj.dll",
+    "javascript:",
+    "vbscript:",
+    "/i:",
+    "/s",
+    "/c"
+)
+| project
+    ChildTime = Timestamp,
+    DeviceId,
+    DeviceName,
+    AccountName,
+    ParentProcess = InitiatingProcessFileName,
+    ParentCommandLine = InitiatingProcessCommandLine,
+    ChildProcess = FileName,
+    ChildCommandLine = ProcessCommandLine,
+    ChildSHA1 = SHA1
+| join kind=inner (
+    DeviceNetworkEvents
+    | where Timestamp >= ago(30d)
+    | where RemoteIPType == "Public" or isnotempty(RemoteUrl)
+    | where InitiatingProcessFileName in~ (
+        "regsvr32.exe",
+        "rundll32.exe",
+        "powershell.exe",
+        "pwsh.exe",
+        "cmd.exe",
+        "mshta.exe",
+        "wscript.exe",
+        "cscript.exe",
+        "certutil.exe",
+        "bitsadmin.exe",
+        "wmic.exe",
+        "msiexec.exe"
+    )
+    | project
+        NetworkTime = Timestamp,
+        DeviceId,
+        NetworkProcess = InitiatingProcessFileName,
+        NetworkCommandLine = InitiatingProcessCommandLine,
+        RemoteUrl,
+        RemoteIP,
+        RemotePort,
+        Protocol,
+        NetworkAction = ActionType
+) on DeviceId
+| where NetworkTime between (ChildTime .. ChildTime + 15m)
+| where NetworkProcess =~ ChildProcess
+| project
+    ChildTime,
+    NetworkTime,
+    DeviceName,
+    AccountName,
+    ParentProcess,
+    ParentCommandLine,
+    ChildProcess,
+    ChildCommandLine,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    Protocol,
+    NetworkAction,
+    ChildSHA1
+| order by ChildTime desc
