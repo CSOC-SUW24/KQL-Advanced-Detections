@@ -1,0 +1,52 @@
+//Microsoft Teams IT Helpdesk Impersonation
+CloudAppEvents
+| where Timestamp >= ago(30d)
+| where Application has_any ("Microsoft Teams", "Teams")
+| where ActionType has_any ("ChatCreated", "MessageSent", "TeamsImpersonationDetected")
+| where AccountDisplayName in~ (
+    "IT Support",
+    "Help Desk",
+    "Helpdesk",
+    "Service Desk",
+    "Support",
+    "Administrator",
+    "Admin",
+    "Microsoft Support",
+    "Office 365",
+    "Azure Support",
+    "Azure AD",
+    "Entra",
+    "Entra ID",
+    "Global Administrator",
+    "Global Admin",
+    "Tenant Administrator",
+    "Tenant Admin",
+    "Teams Administrator",
+    "Teams Admin",
+    "SOC",
+    "Security Operations Center",
+    "Corporate IT",
+    "Internal IT"
+)
+| where IsExternalUser == true
+    or IsImpersonated == true
+    or ActionType has "TeamsImpersonationDetected"
+| project
+    Timestamp,
+    Application,
+    ActionType,
+    AccountDisplayName,
+    AccountId,
+    IPAddress,
+    CountryCode,
+    City,
+    ISP,
+    IsExternalUser,
+    IsImpersonated,
+    IsAdminOperation,
+    DeviceType,
+    OSPlatform,
+    UserAgent,
+    RawEventData,
+    AdditionalFields
+| order by Timestamp desc
