@@ -1,0 +1,66 @@
+//High Fidelity ARToken Detection
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has_any (
+    "hewktree.net",
+    "pamconj.com",
+    "corabuild.eu",
+    "outllerbuilt.com",
+    "badrockstabilization.com",
+    "klwo.org"
+)
+| project
+    Timestamp,
+    Source = "ARTokenC2NetworkTraffic",
+    DeviceName,
+    Account = InitiatingProcessAccountName,
+    Indicator = RemoteUrl,
+    RemoteIP,
+    RemoteUrl,
+    SenderFromAddress = "",
+    SenderFromDomain = "",
+    Subject = "",
+    DeliveryAction = "",
+    DeliveryLocation = "",
+    ThreatTypes = "",
+    IsFirstContact = ""
+| union (
+    EmailUrlInfo
+    | where Timestamp > ago(30d)
+    | where Url has ".sharepoint.com" or Url has ".workers.dev"
+    | project UrlTimestamp = Timestamp, NetworkMessageId, Url
+    | join kind=inner (
+        EmailEvents
+        | where Timestamp > ago(30d)
+        | where EmailDirection =~ "Inbound"
+        | where DeliveryAction =~ "Delivered"    
+        | where IsFirstContact == true
+        | project
+            EmailTimestamp = Timestamp,
+            NetworkMessageId,
+            SenderFromAddress,
+            SenderFromDomain,
+            RecipientEmailAddress,
+            Subject,
+            DeliveryAction,
+            DeliveryLocation,
+            ThreatTypes,
+            IsFirstContact
+    ) on NetworkMessageId
+    | project
+        Timestamp = EmailTimestamp,
+        Source = "DeliveredInboundEmailLure",
+        DeviceName = "",
+        Account = RecipientEmailAddress,
+        Indicator = Url,
+        RemoteIP = "",
+        RemoteUrl = "",
+        SenderFromAddress,
+        SenderFromDomain,
+        Subject,
+        DeliveryAction,
+        DeliveryLocation,
+        ThreatTypes,
+        IsFirstContact = tostring(IsFirstContact)
+)
+| order by Timestamp desc
