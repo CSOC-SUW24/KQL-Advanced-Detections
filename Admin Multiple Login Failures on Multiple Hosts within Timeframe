@@ -1,0 +1,33 @@
+// Description: Detects an administrative account failing to log on
+// with LogonType Interactive or RemoteInteractive, where the username
+// matches admin-style prefixes, with >= 6 failed logons within a
+// 5-minute window spanning >= 2 distinct destination hosts.
+
+DeviceLogonEvents
+| where Timestamp > ago(30d)
+| where ActionType == "LogonFailed"
+| where LogonType in ("Interactive", "RemoteInteractive")
+| where AccountName matches regex @"(?i)^(adm|admin|uhd|sit|dom|ent|domadm|entadm|adsadm|srvadm|cliadm|netadm).*"
+| summarize
+    FailedLogonCount = count(),
+    DistinctHosts = dcount(DeviceName),
+    Hosts = make_set(DeviceName, 100),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp),
+    LogonTypes = make_set(LogonType, 10),
+    FailureReasons = make_set(FailureReason, 20)
+    by AccountName, AccountDomain, bin(Timestamp, 5m)
+| where FailedLogonCount >= 6 and DistinctHosts >= 2
+| project
+    TimeWindowStart = Timestamp,
+    TimeWindowEnd = Timestamp + 3m,
+    AccountDomain,
+    AccountName,
+    FailedLogonCount,
+    DistinctHosts,
+    Hosts,
+    LogonTypes,
+    FailureReasons,
+    FirstSeen,
+    LastSeen
+| order by TimeWindowStart desc
