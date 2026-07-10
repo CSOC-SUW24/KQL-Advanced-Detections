@@ -1,0 +1,25 @@
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where ActionType == "ConnectionSuccess"
+| where RemoteUrl has_any (
+    "deploypasskey.com",
+    "setpasskey.com",
+    "passkeymanage.com",
+    "assignpasskey.com",
+    "addpasskey.com",
+    "passkeyadd.com",
+    "passkeydeploy.com"
+)
+| project
+    Timestamp,
+    DeviceName,
+    InitiatingProcessAccountName,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    RemoteIPType,
+    Protocol,
+    ActionType
+| order by Timestamp desc
