@@ -1,0 +1,28 @@
+//The threat actor registers domains that incorporate the word passkey as part of a voice-enabled phishing (“vishing”) scheme. The threat actor then calls targeted users on the phone in an attempt to persuade them that they need to register a new passkey.
+//Users are directed to a phishing kit that closely mimics the Microsoft passkey enrollment process. It appears engineered to convince a targeted user they are in the process of enrolling a passkey with Microsoft, while the threat actor simultaneously registers their own passkey in the targeted user’s Microsoft account.
+//Refernce: https://www.okta.com/en-au/blog/threat-intelligence/vishing-actors-target-microsoft-entra-passkey-enrollment-/
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where ActionType == "ConnectionSuccess"
+| where RemoteUrl has_any (
+    "deploypasskey.com",
+    "setpasskey.com",
+    "passkeymanage.com",
+    "assignpasskey.com",
+    "addpasskey.com",
+    "passkeyadd.com",
+    "passkeydeploy.com"
+)
+| project
+    Timestamp,
+    DeviceName,
+    InitiatingProcessAccountName,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    RemoteIPType,
+    Protocol,
+    ActionType
+| order by Timestamp desc
