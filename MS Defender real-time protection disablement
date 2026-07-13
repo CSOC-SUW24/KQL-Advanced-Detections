@@ -1,0 +1,73 @@
+//MS Defender real-time protection disablement
+DeviceProcessEvents
+| where Timestamp >= ago(30d)
+| where FileName in~ ("powershell.exe", "pwsh.exe")
+| extend Cmd = tolower(ProcessCommandLine)
+| where Cmd has_any ("set-mppreference", "add-mppreference")
+| where Cmd has_any (
+    "disablerealtimemonitoring",
+    "disablebehaviormonitoring",
+    "disableioavprotection",
+    "disablescriptscanning",
+    "disablearchivescanning",
+    "disableintrusionpreventionsystem",
+    "disableprivacymode",
+    "exclusionpath",
+    "exclusionprocess",
+    "exclusionextension",
+    "exclusionipaddress"
+)
+| extend SuspiciousPowerShellFlags = iff(
+    Cmd has_any (
+        "-executionpolicy bypass",
+        "-ep bypass",
+        "-windowstyle hidden",
+        "-w hidden",
+        "-encodedcommand",
+        "-enc",
+        "-noprofile",
+        "-nop",
+        "-noninteractive",
+        "-noexit"
+    ),
+    "Yes",
+    "No"
+)
+| extend TamperType = case(
+    Cmd has "disablerealtimemonitoring" and Cmd has_any ("$true", " true", " 1"), "Disable Defender Real-Time Monitoring",
+    Cmd has "disablebehaviormonitoring" and Cmd has_any ("$true", " true", " 1"), "Disable Behavior Monitoring",
+    Cmd has "disableioavprotection" and Cmd has_any ("$true", " true", " 1"), "Disable IOAV Protection",
+    Cmd has "disablescriptscanning" and Cmd has_any ("$true", " true", " 1"), "Disable Script Scanning",
+    Cmd has "disablearchivescanning" and Cmd has_any ("$true", " true", " 1"), "Disable Archive Scanning",
+    Cmd has "disableintrusionpreventionsystem" and Cmd has_any ("$true", " true", " 1"), "Disable Intrusion Prevention",
+    Cmd has "exclusionpath", "Defender Exclusion Path Added",
+    Cmd has "exclusionprocess", "Defender Exclusion Process Added",
+    Cmd has "exclusionextension", "Defender Exclusion Extension Added",
+    Cmd has "exclusionipaddress", "Defender Exclusion IP Added",
+    "Other Defender Tampering"
+)
+| extend DetectionConfidence = case(
+    TamperType == "Disable Defender Real-Time Monitoring", "High",
+    TamperType startswith "Disable", "High",
+    SuspiciousPowerShellFlags == "Yes", "Medium",
+    TamperType startswith "Defender Exclusion", "Medium",
+    "Low"
+)
+| where DetectionConfidence in ("High", "Medium")
+| project
+    Timestamp,
+    DeviceName,
+    AccountName,
+    DetectionConfidence,
+    TamperType,
+    SuspiciousPowerShellFlags,
+    FileName,
+    ProcessCommandLine,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    FolderPath,
+    SHA1,
+    SHA256,
+    DeviceId,
+    ReportId
+| order by Timestamp desc
