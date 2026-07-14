@@ -1,3 +1,4 @@
+//Potential Warp Terminal Shell Command Injection
 DeviceProcessEvents
 | where Timestamp >= ago(30d)
 | extend ParentProcess = tolower(tostring(InitiatingProcessFileName))
