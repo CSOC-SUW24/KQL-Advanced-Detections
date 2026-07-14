@@ -1,0 +1,38 @@
+DeviceProcessEvents
+| where Timestamp >= ago(30d)
+| extend ParentProcess = tolower(tostring(InitiatingProcessFileName))
+| extend Cmd = tostring(ProcessCommandLine)
+| where ParentProcess has "warp"
+    or InitiatingProcessCommandLine has "warp"
+| where FileName in~ ("sh", "bash", "zsh", "fish", "dash")
+| where Cmd has_any ("-c", "/bin/sh", "sh -c", "bash -c")
+| where Cmd has_any (
+    "$(",
+    "`",
+    ";",
+    "&&",
+    "||",
+    "touch /tmp",
+    "open -a",
+    "curl ",
+    "wget ",
+    "chmod +x",
+    "python -c",
+    "python3 -c",
+    "osascript"
+)
+| project
+    Timestamp,
+    DeviceName,
+    AccountName,
+    DetectionType = "High Confidence Warp Shell Command Injection Pattern",
+    ParentProcess = InitiatingProcessFileName,
+    ParentCommandLine = InitiatingProcessCommandLine,
+    ChildProcess = FileName,
+    ChildCommandLine = ProcessCommandLine,
+    FolderPath,
+    SHA1,
+    SHA256,
+    DeviceId,
+    ReportId
+| order by Timestamp desc
