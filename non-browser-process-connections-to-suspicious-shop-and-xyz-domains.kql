@@ -1,0 +1,34 @@
+DeviceNetworkEvents
+| where Timestamp >= ago(90d)
+| where isnotempty(RemoteUrl)
+| extend NormalizedUrl = case(
+    RemoteUrl startswith "http://", RemoteUrl,
+    RemoteUrl startswith "https://", RemoteUrl,
+    strcat("https://", RemoteUrl)
+)
+| extend ParsedUrl = parse_url(NormalizedUrl)
+| extend Domain = tolower(tostring(ParsedUrl.Host))
+| where Domain endswith ".shop" or Domain endswith ".xyz"
+| extend IsCommonBrowser = InitiatingProcessFileName in~ (
+    "msedge.exe",
+    "chrome.exe",
+    "firefox.exe",
+    "brave.exe",
+    "opera.exe",
+    "iexplore.exe",
+    "msedgewebview2.exe"
+)
+| where IsCommonBrowser == false
+| project
+    Timestamp,
+    DeviceName,
+    Domain,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    ActionType,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    InitiatingProcessParentFileName,
+    InitiatingProcessAccountName
+| order by Timestamp desc
