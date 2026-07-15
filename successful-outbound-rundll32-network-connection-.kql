@@ -1,0 +1,25 @@
+DeviceNetworkEvents
+| where Timestamp >= ago(30d)
+| where ActionType == "ConnectionSuccess"
+| where InitiatingProcessFileName =~ "rundll32.exe"
+| where InitiatingProcessParentFileName !~ "svchost.exe"
+| where RemoteIPType == "Public"
+| project
+    Timestamp,
+    DeviceName,
+    ActionType,
+    InitiatingProcessAccountName,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    InitiatingProcessParentFileName,
+    InitiatingProcessParentCommandLine,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    RemoteIPType,
+    Protocol,
+    LocalIP,
+    LocalPort,
+    DeviceId,
+    ReportId
+| order by Timestamp desc
