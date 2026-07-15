@@ -1,3 +1,4 @@
+//Successful Outbound Rundll32 Network Connection
 DeviceNetworkEvents
 | where Timestamp >= ago(30d)
 | where ActionType == "ConnectionSuccess"
