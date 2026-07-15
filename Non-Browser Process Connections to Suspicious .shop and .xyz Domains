@@ -1,3 +1,4 @@
+//Non-Browser Process Connections to Suspicious .shop and .xyz Domains
 DeviceNetworkEvents
 | where Timestamp >= ago(90d)
 | where isnotempty(RemoteUrl)
