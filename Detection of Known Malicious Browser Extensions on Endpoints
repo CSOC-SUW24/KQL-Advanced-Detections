@@ -1,0 +1,66 @@
+//Detection of Known Malicious Browser Extensions on Endpoints
+let MaliciousExtensionIds = dynamic([
+    "adnahjjfjjemdiefpobclponnhkijnmo","aekfeebhjlmielppjlhebapokdkelion","afakckepbbffmnoghgpfnnebijeahjcb",
+    "ajbkmeegjnmaggkhmibgckapjkohajim","ajnjfpjimckjhfcpkaldennpdjglmeml","aljmdjbcbkanlhnmcdjbefaomgbekhno",
+    "amemnenomfejhfmfiheekmbcigfkolel","amfboegfahhedgehddflgcfbdaapllfj","aooacabidfijofopjaeligonlfobjcjb",
+    "badiigfpcpfckbhmpmkhokagppaadkim","beemogkfhphmjghmkghdaggidgohohee","bemebcpaekkmffjjbdakpipemmmlgchb",
+    "bmmchpeggdipgcobjbkcjiifgjdaodng","bpdanoaacmebjgfjdmekfcfgmnaoekim","bpjnmlookdfciblphehedlcbpmignahe",
+    "cbopgngpbfeoecnbebghbbhmdadmllce","celdediiemogjpfcjocdbildilkccepl","cfilkckedhoniijcpjfgihelgepflpni",
+    "cgjomicbgmoadggnjbdiafpjlodmafkp","cjjcndlebdepeddfopnhpifmbfecocfh","dbhdfkiddhdhmcikjdgblfjbenjfjlfh",
+    "dbhgpbaaedlknnnochmkjfacnfnakkfa","dcelinkcepeidliddjhapgjokheoldjb","dckihkcdmjmlkndgmmgplpcnkmdpangb",
+    "dgmpkflgbcbpjgniahjegbpelmofbgnn","dhnibdhcanplpdkcljgmfhbipehkgdkk","dokiamnhbobapjfhhhcjlfplabeofamp",
+    "eblienbdkbgiigaebhmljbedkafiobkj","edohfgmjmdnibeihfcajfclmhapjkooa","egbkgelnkodaldbpkgjmhcekjakkcpnk",
+    "eindenipbnkpeofhpjjimphfchmjoohe","eklcgjodcnhhcghpbhehhbnmjncbopcg","elecjoakfjcmjoppfconlfgfemjcaoea",
+    "elljfaejhdaplocgcejlhfemgimbmcdp","eopjamlpanhfkcbnoeofcnmdfdiogfgl","fbobegkkdmmcnmoplkgdmfhdlkjfelnb",
+    "fcoongackakfdmiincikmjgkedcgjkdp","fdjpommjpahieenehallhicdhponhacm","ffedaeoanbhgmanhhecfjodpopcjnhkc",
+    "fgbfcndckldbjifhjgijpjmnpekkelkb","fhhinoefbjlmhakpjohnpabdobgmphli","fhkijdlfjnpimenfpnegkecbbijmoipm",
+    "fkkoeecbjckjpnmenebojblcljjgbpoj","flcgalphjnojjefjnnimnejbkkefbjgo","fljmegmgjebjdionedkjfgffikhnmcgg",
+    "flmkfmdmcaepdaoedepihfkhmgopiago","fmchencccolmmgjmaahfhpglemdcjfll","gclhifbbggfamoojmienffegbmmfnfll",
+    "gggjlnkbmgmjboipaegjmjmehmcekamo","glgbgppjjkldoifgpbhbpbkbcdjpgpfj","gmaoimcaoimgmomockloieoifjocpkmf",
+    "gmciomcaholgmklbfangdjkneihfkddd","gnbnbmnldhfoplgjojhepikgjanaplle","hcmfdagipflbaagmcnhnhabkmjkopcke",
+    "hecicojipmfmablnbhknedademofbbpk","hffpfdhdjpbnaddaidajedimmpckekkl","higdalghhdbfffdjdiaenminajlmmldb",
+    "hlkenllnegiplhjhpobgangolfkjcgab","hmjdegfgppjddmmojloflajkelegnjdp","hnggnhinapdcjocbciajaffnofecfale",
+    "hninibdhkeepfndhcdknlijeapngbgdp","hnleilhpfbdofpdnnpjggafhncienakg","iaehhmhmdidpkfmddiodkloefndpggcj",
+    "ibfjnghdeenopfkpbmnkablkfejnlnif","ibjjllhemkfgfbkgohldepcdgiigpdkb","ielbkcjohpgmjhoiadncabphkglejgih",
+    "ijgobfhjjipoljjcejmafocdnfnloflm","ikfdcmchafnmklcndfegdlefcfoaggni","imcbcfmohachfahkbgijokokjpfmoogb",
+    "imiheoejheaebigkjaeilfmekiikjdbd","inelenlaldjofeekhjinpjkacjokagke","jbmkcmhocoddcokjkahpcchanlmiffhg",
+    "jebcdimkcimkafekgbgbhookdajcoeib","jecnjeedhbokmpckobjbgieglfjcomek","jgngkchljnldpnjimaboboomjmpfpoie",
+    "jgphopeamnghlcekffldkpnbhmiadnbc","jhahljcmjemimhchigiaigklabnpodgo","jihipmfmicjjpbpmoceapfjmigmemfam",
+    "jjdfciihihcpgfgmoonfpgglbgclpfai","jnakfjmfmjmfpmdnghedafdphdanbjkh","johcbgkljdbebbloakcollpmigpigkpd",
+    "kakgeonhimhojdncehlopejkfaapboeo","kemjiblbeciejjlgobbkffbpnceieefh","kikacehfccglblphddbifmiaeiglfdfi",
+    "klmfgbnlbfgpdenpdddpdfigmnkmchil","kmiahfbflcnmlobepelpgkmolhodmiek","lfdoadipcejhmpcpfkgkdionjlnfempa",
+    "lkmeakjjodlkhbikbpdoeicfodaklkna","lplondnihmdhjokafldkcfnjclkhigpm","mebgpfbaibhepnkljpimlijicgkbangk",
+    "mimmainmmkddahakleojidjaimaofndp","mjofmhcbolkekhebpccldlbdamnfjefc","mlgefgipndlgdfjfgnjfheigkagjieea",
+    "ncbpkjcnklnbnkjpcamhhoedlkljeolo","nepdfkaidpemglngbgpnmmhnleiekpin","ngeoikidkjbegoifbnmfimacmbilfcgi",
+    "nhfohdhgahjpmniccbgflilignkcnmai","nhjdhmbdahdidccpobobccagmmijndmp","nipggfgilmoiofmnkbeabghbcaohmjih",
+    "nphphgkcccnlmdiihcedabnhfacfmojk","obocpangfamkffjllmcfnieeoacoheda","oejbpnadmkdiofacgknaaagbmmonhgpb",
+    "oiolhdeinoaidggfcpebifcbedppbgog","okmfpehbgckbneedidbladdaiekikcdo","onlofoccaenllpjmalbnilfacjmcfhfk",
+    "pjhoiegecdlpaohfffpajaldpbilngog","pohfogacehhgefhgmcmnojflfakllkal","akfklmfpgmkkhiiolnfbhalkeccjnmeb",
+    "bbofakpgfmlfjpjcahodgpbddocpibge","cgoigjefilgfmcjnnendlpdaonlfoncf","engcfdjknekakgpjkhdobneidcpfbfgm",
+    "mdjeohcdegpfoppocljbccpognjlkjke","nfincgjfplibcdcncfkeehldffppnlnp","nmhdjlflloeeahacgomilnhmpfnhlpkn",
+    "pdnjhppcgkdbjolbeplcabkcfmpnbjmh","pgcamkdibinodcpkhenjmofbfobpebpn","nlapjaaepfeadiecaipnacimidfjginj",
+    "olcibgopfmndlnghnmogcgdhdffdbicg","fifeankddgioinbcchlokclbcgjlopjj","maiackahflfnegibhinjhpbgeoldeklb"
+]);
+DeviceFileEvents
+| where Timestamp > ago(30d)
+| where FolderPath has_any (MaliciousExtensionIds)
+| extend FolderPathLower = tolower(FolderPath)
+| mv-apply ExtensionId = MaliciousExtensionIds to typeof(string) on (
+    where FolderPathLower has ExtensionId
+)
+| where FolderPathLower has @"\extensions\"
+    or FolderPathLower has @"/extensions/"
+    or FolderPathLower has @"\extension state\"
+    or FolderPathLower has @"\local extension settings\"
+| project
+    Timestamp,
+    DeviceName,
+    ActionType,
+    MatchedExtensionId = ExtensionId,
+    FileName,
+    FolderPath,
+    SHA256,
+    InitiatingProcessFileName,
+    InitiatingProcessCommandLine,
+    InitiatingProcessAccountName
+| order by Timestamp desc
