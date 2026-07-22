@@ -1,0 +1,245 @@
+//Detection of BoryptGrab-Lineage Infostealer Activity via Fake GitHub Delivery, C2 Traffic, and DLL Side-Loading
+union isfuzzy=true
+(
+    DeviceNetworkEvents
+    | where Timestamp >= ago(30d)
+    | extend Remote = strcat(tostring(RemoteUrl), " ", tostring(RemoteIP))
+    | extend Proc = tolower(tostring(InitiatingProcessFileName))
+    | extend Cmd = tolower(tostring(InitiatingProcessCommandLine))
+    | where
+        RemoteIP in~ ("193.143.1.131", "45.93.20.61")
+        or RemoteUrl has_any (
+            "193.143.1.131",
+            "45.93.20.61",
+            "targetroyena.com",
+            "bentleyvazquezpvey.github.io",
+            "/api/x32_chromium",
+            "/download-archive"
+        )
+        or (
+            RemotePort == 5466
+            and Proc in~ ("gup.exe", "node.exe", "node", "cmd.exe", "powershell.exe", "pwsh.exe")
+        )
+    | where not(
+        RemoteUrl has "github.io"
+        and not(RemoteUrl has_any ("bentleyvazquezpvey.github.io", "targetroyena.com", "download-archive"))
+    )
+    | project
+        Timestamp,
+        SourceTable = "DeviceNetworkEvents",
+        DetectionType = "BoryptGrab High-Fidelity Network Indicator",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        FileName = InitiatingProcessFileName,
+        CommandLine = InitiatingProcessCommandLine,
+        RemoteUrl,
+        RemoteIP,
+        RemotePort,
+        ActionType,
+        FolderPath = "",
+        SHA256 = "",
+        DeviceId,
+        ReportId
+),
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Proc = tolower(tostring(FileName))
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | extend Path = tolower(tostring(FolderPath))
+    | where
+        SHA256 in~ (
+            "1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778",
+            "6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8",
+            "fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56",
+            "07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82",
+            "8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8",
+            "e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2",
+            "52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856"
+        )
+        or (
+            Proc == "gup.exe"
+            and Path has_any (
+                "\\downloads\\",
+                "\\desktop\\",
+                "\\temp\\",
+                "\\appdata\\local\\temp\\"
+            )
+        )
+        or (
+            Cmd has_any (
+                "193.143.1.131",
+                "45.93.20.61",
+                "targetroyena.com",
+                "bentleyvazquezpvey.github.io"
+            )
+        )
+        or (
+            Cmd has_any ("x32_chromium", "download-archive")
+            and Cmd has_any ("gup.exe", "libcurl.dll", "github.io", "targetroyena.com")
+        )
+    | where not(
+        Proc == "gup.exe"
+        and Path has_any (
+            "\\program files\\notepad++\\",
+            "\\program files (x86)\\notepad++\\"
+        )
+    )
+    | project
+        Timestamp,
+        SourceTable = "DeviceProcessEvents",
+        DetectionType = "BoryptGrab Suspicious Process Execution",
+        DeviceName,
+        Account = AccountName,
+        FileName,
+        CommandLine = ProcessCommandLine,
+        RemoteUrl = "",
+        RemoteIP = "",
+        RemotePort = int(null),
+        ActionType,
+        FolderPath,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceImageLoadEvents
+    | where Timestamp >= ago(30d)
+    | extend LoadedImage = tolower(tostring(FileName))
+    | extend LoadedPath = tolower(tostring(FolderPath))
+    | extend ParentProc = tolower(tostring(InitiatingProcessFileName))
+    | extend ParentPath = tolower(tostring(column_ifexists("InitiatingProcessFolderPath", "")))
+    | where
+        SHA256 in~ (
+            "1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778",
+            "6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8",
+            "fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56",
+            "07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82",
+            "8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8",
+            "e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2",
+            "52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856"
+        )
+        or (
+            LoadedImage == "libcurl.dll"
+            and ParentProc == "gup.exe"
+            and (
+                LoadedPath has_any ("\\downloads\\", "\\desktop\\", "\\temp\\", "\\appdata\\local\\temp\\")
+                or ParentPath has_any ("\\downloads\\", "\\desktop\\", "\\temp\\", "\\appdata\\local\\temp\\")
+            )
+        )
+    | where not(
+        ParentPath has_any (
+            "\\program files\\notepad++\\",
+            "\\program files (x86)\\notepad++\\"
+        )
+    )
+    | project
+        Timestamp,
+        SourceTable = "DeviceImageLoadEvents",
+        DetectionType = "BoryptGrab Potential libcurl.dll Side-Loading",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        FileName = FileName,
+        CommandLine = InitiatingProcessCommandLine,
+        RemoteUrl = "",
+        RemoteIP = "",
+        RemotePort = int(null),
+        ActionType,
+        FolderPath,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceFileEvents
+    | where Timestamp >= ago(30d)
+    | extend FileLower = tolower(tostring(FileName))
+    | extend Path = tolower(tostring(FolderPath))
+    | where
+        SHA256 in~ (
+            "1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778",
+            "6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8",
+            "fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56",
+            "07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82",
+            "8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8",
+            "e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2",
+            "52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856"
+        )
+        or (
+            FileLower == "libcurl.dll"
+            and Path has_any (
+                "\\downloads\\",
+                "\\desktop\\",
+                "\\temp\\",
+                "\\appdata\\local\\temp\\"
+            )
+            and InitiatingProcessFileName in~ (
+                "gup.exe",
+                "explorer.exe",
+                "cmd.exe",
+                "powershell.exe",
+                "pwsh.exe",
+                "7z.exe",
+                "winrar.exe"
+            )
+        )
+        or (
+            FileLower has_any ("x32_chromium", "grabpure_dump")
+        )
+    | where not(
+        Path has_any (
+            "\\program files\\notepad++\\",
+            "\\program files (x86)\\notepad++\\"
+        )
+    )
+    | project
+        Timestamp,
+        SourceTable = "DeviceFileEvents",
+        DetectionType = "BoryptGrab Suspicious File Artifact",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        FileName,
+        CommandLine = InitiatingProcessCommandLine,
+        RemoteUrl = "",
+        RemoteIP = "",
+        RemotePort = int(null),
+        ActionType,
+        FolderPath,
+        SHA256,
+        DeviceId,
+        ReportId
+)
+| extend Severity = case(
+    SHA256 in~ (
+        "1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778",
+        "6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8",
+        "fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56",
+        "07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82",
+        "8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8",
+        "e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2",
+        "52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856"
+    ), "High",
+    RemoteIP in~ ("193.143.1.131", "45.93.20.61"), "High",
+    DetectionType has "Side-Loading", "High",
+    FileName in~ ("gup.exe", "libcurl.dll"), "Medium",
+    "Low"
+)
+| where Severity in ("High", "Medium")
+| project
+    Timestamp,
+    Severity,
+    SourceTable,
+    DetectionType,
+    DeviceName,
+    Account,
+    FileName,
+    CommandLine,
+    RemoteUrl,
+    RemoteIP,
+    RemotePort,
+    ActionType,
+    FolderPath,
+    SHA256,
+    DeviceId,
+    ReportId
+| order by Timestamp desc
