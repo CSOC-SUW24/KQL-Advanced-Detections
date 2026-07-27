@@ -1,0 +1,58 @@
+//Detection of Newly Created Machine Accounts Exposing LDAP and SMB Services
+DeviceNetworkEvents
+| where Timestamp >= ago(1h)
+| where ActionType == "ListeningConnectionCreated"
+| where LocalPort in (389, 445)
+| summarize
+    ListenPortCount = dcount(LocalPort),
+    ListeningPorts = make_set(LocalPort),
+    FirstListen = min(Timestamp),
+    LastListen = max(Timestamp)
+by DeviceName
+| where ListenPortCount == 2
+| extend JoinKey = 1
+| join kind=inner (
+    IdentityDirectoryEvents
+    | where Timestamp >= ago(1h)
+    | where ActionType has_any (
+        "Account created",
+        "User Account Created",
+        "Computer account created",
+        "Computer Account Created",
+        "AccountCreated"
+    )
+    | extend TargetAccountRaw = strcat(
+        tostring(column_ifexists("TargetAccountName", "")),
+        " ",
+        tostring(column_ifexists("TargetAccountDisplayName", "")),
+        " ",
+        tostring(column_ifexists("TargetAccountUpn", ""))
+    )
+    | where TargetAccountRaw has "$"
+    | extend CreatedDeviceName = tolower(extract(@"([A-Za-z0-9\-_]+)\$", 1, TargetAccountRaw))
+    | where isnotempty(CreatedDeviceName)
+    | extend JoinKey = 1
+    | project
+        JoinKey,
+        CreatedTime = Timestamp,
+        CreatedDeviceName,
+        TargetAccountRaw,
+        CreatedBy = tostring(column_ifexists("AccountName", "")),
+        CreatedByUpn = tostring(column_ifexists("AccountUpn", "")),
+        DirectoryAction = ActionType
+) on JoinKey
+| extend DeviceNameLower = tolower(DeviceName)
+| where DeviceNameLower has CreatedDeviceName
+    or CreatedDeviceName has tostring(split(DeviceNameLower, ".")[0])
+| project
+    CreatedTime,
+    FirstListen,
+    LastListen,
+    DeviceName,
+    CreatedDeviceName,
+    TargetAccountRaw,
+    CreatedBy,
+    CreatedByUpn,
+    DirectoryAction,
+    ListeningPorts
+| order by CreatedTime desc
