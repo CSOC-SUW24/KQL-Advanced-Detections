@@ -1,0 +1,110 @@
+DeviceProcessEvents
+| where Timestamp >= ago(30d)
+| where FileName in~ ("powershell.exe", "pwsh.exe", "wsmprovhost.exe")
+| extend Cmd = tolower(tostring(ProcessCommandLine))
+| where Cmd has_any (
+    "system.security.cryptography",
+    "aesmanaged",
+    "aescng",
+    "aescryptoserviceprovider",
+    "rijndaelmanaged",
+    "createencryptor",
+    "cryptostream",
+    "transformfinalblock"
+)
+| where Cmd has_any (
+    "get-childitem",
+    "foreach",
+    "readallbytes",
+    "writeallbytes",
+    "filestream",
+    "set-content",
+    "rename-item",
+    "move-item",
+    "-recurse"
+)
+| project
+    PSTime = Timestamp,
+    DeviceId,
+    DeviceName,
+    AccountName,
+    PowerShellFileName = FileName,
+    PowerShellCommandLine = ProcessCommandLine,
+    PowerShellParentProcess = InitiatingProcessFileName,
+    PowerShellParentCommandLine = InitiatingProcessCommandLine,
+    PowerShellSHA256 = SHA256,
+    PowerShellReportId = ReportId
+| join kind=inner (
+    DeviceFileEvents
+    | where Timestamp >= ago(30d)
+    | extend FileNameLower = tolower(tostring(FileName))
+    | extend FolderPathLower = tolower(tostring(FolderPath))
+    | extend FileSignal = case(
+        FileNameLower matches regex @"(?i)(readme|read_me|restore|recover|decrypt|how_to_decrypt|how-to-decrypt|files_encrypted|ransom).*\.(txt|html|hta|url)$", "RansomNote",
+        FileNameLower matches regex @"(?i)\.(locked|encrypted|enc|crypt|crypted|pay|ransom|rnsm|lock|lockedfile|akira|conti|lockbit|blackcat)$", "EncryptedExtensionOrRename",
+        ActionType in~ ("FileRenamed", "FileCreated", "FileModified") and FileNameLower has_any ("decrypt", "recover", "restore", "ransom"), "RansomNote",
+        "Other"
+    )
+    | where FileSignal in ("RansomNote", "EncryptedExtensionOrRename")
+    | project
+        FileTime = Timestamp,
+        DeviceId,
+        FileDeviceName = DeviceName,
+        FileSignal,
+        FileActionType = ActionType,
+        FileName,
+        FolderPath,
+        FileSHA256 = SHA256,
+        FileInitiatingProcess = InitiatingProcessFileName,
+        FileInitiatingCommandLine = InitiatingProcessCommandLine,
+        FileInitiatingAccount = InitiatingProcessAccountName
+) on DeviceId
+| where FileTime between (PSTime .. PSTime + 60m)
+| summarize
+    FirstFileActivity = min(FileTime),
+    LastFileActivity = max(FileTime),
+    EncryptedOrRenamedFiles = countif(FileSignal == "EncryptedExtensionOrRename"),
+    RansomNotesCreated = countif(FileSignal == "RansomNote"),
+    SampleFiles = make_set(FolderPath, 25),
+    FileActions = make_set(FileActionType, 10),
+    FileInitiatingProcesses = make_set(FileInitiatingProcess, 10)
+by
+    PSTime,
+    DeviceName,
+    AccountName,
+    PowerShellFileName,
+    PowerShellCommandLine,
+    PowerShellParentProcess,
+    PowerShellParentCommandLine,
+    PowerShellSHA256,
+    DeviceId,
+    PowerShellReportId
+| where EncryptedOrRenamedFiles >= 10
+    or RansomNotesCreated >= 1
+| extend Severity = case(
+    EncryptedOrRenamedFiles >= 50 and RansomNotesCreated >= 1, "High",
+    EncryptedOrRenamedFiles >= 10 and RansomNotesCreated >= 1, "High",
+    EncryptedOrRenamedFiles >= 10, "Medium",
+    RansomNotesCreated >= 1, "Medium",
+    "Low"
+)
+| project
+    PSTime,
+    Severity,
+    DeviceName,
+    AccountName,
+    PowerShellFileName,
+    PowerShellCommandLine,
+    PowerShellParentProcess,
+    PowerShellParentCommandLine,
+    FirstFileActivity,
+    LastFileActivity,
+    EncryptedOrRenamedFiles,
+    RansomNotesCreated,
+    FileActions,
+    FileInitiatingProcesses,
+    SampleFiles,
+    PowerShellSHA256,
+    DeviceId,
+    PowerShellReportId
+| order by PSTime desc
