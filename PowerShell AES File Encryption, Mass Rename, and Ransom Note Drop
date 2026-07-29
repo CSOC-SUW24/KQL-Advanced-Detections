@@ -1,3 +1,4 @@
+//PowerShell AES File Encryption, Mass Rename, and Ransom Note Drop
 DeviceProcessEvents
 | where Timestamp >= ago(30d)
 | where FileName in~ ("powershell.exe", "pwsh.exe", "wsmprovhost.exe")
