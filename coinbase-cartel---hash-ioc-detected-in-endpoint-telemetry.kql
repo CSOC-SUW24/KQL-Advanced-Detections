@@ -1,0 +1,95 @@
+// Coinbase Cartel related hash IOC hunt
+// Microsoft Defender XDR Advanced Hunting
+// Hunting window: 30 days
+
+let TimeRange = 30d;
+let IOC_Hashes = datatable(MatchedHash:string)
+[
+    "e96325bbb60a04cad182891515c14964dbd873cb9d7625fa5a4d736dc68246d1",
+    "04461a6b8ac0fea7f089d739aee9ed081d9a1fa30c837214ef3cd50e60be0804",
+    "5f9e5448da034de96febe86d86e32db73b30597abd5d83266301666f21f784e7",
+    "a686b29f491b1779cf0e616dbee999e8",
+    "a42656e5ad3c22bc0833ddb2d250bfa1839a28f8a27f941e2ec5e5dbc9ad757e",
+    "ec5d494f2a6b8dac323887096152bd4851766d4119be1487597a4bcc86f12d36",
+    "801b530e765afe99490e765b3850d09c8cf9339e7aab54742b3ea28cc98035b3",
+    "fcf42c5f5dae306781197ff618d5172e60f1f500",
+    "a61851cb441f303f337d4f04713cd0c5238bf99d96263ea4b9c9d6e0da4de44b",
+    "ffce3a027191888d44de16e546429396c49dbe6fd7bd7caba8512a65f5686296",
+    "9ecb62824c4a6a7e1d9c35836391fcdfcc192a36742816161b0babfd368ec5a9",
+    "7406a9fc765bf2c160805e9640c30c92f59ef6b967f6df9d50b73b709e6a9e8f",
+    "7589cbbe2825a9ed7fcdbaf303a50a71f94601333ecae536caa26f45805eb32f",
+    "fa1067298bed9e95fc864e95c91012d98593c019e1c11910fa6a1cee53263a78",
+    "dd766c3b2ca6cbea1905751d5c252c0ee75ac70bafdf24b7ab17e5ff0f92bbfd",
+    "8298208653df9787cfe447c0cd3ff2ad50ceab379bb87ca11d529a05ab090be5",
+    "49ecbb637a473ec76fefa8c05811a1cc2a3c2d",
+    "18b15d943807744f0cf2e94eebbcdcf5379a75535e9d93b501d88df2fd157eec",
+    "f0e88953b023ca85247155758c33ab0787f0ce10d6d48216bcef18e476ca4b94",
+    "aa59cb2baa7e7d38d8bb4ff6a22afbf2945de4fb555f9b8bb26"
+];
+union isfuzzy=true
+(
+    DeviceFileEvents
+    | where Timestamp > ago(TimeRange)
+    | extend SourceTable = "DeviceFileEvents"
+),
+(
+    DeviceProcessEvents
+    | where Timestamp > ago(TimeRange)
+    | extend SourceTable = "DeviceProcessEvents"
+),
+(
+    DeviceImageLoadEvents
+    | where Timestamp > ago(TimeRange)
+    | extend SourceTable = "DeviceImageLoadEvents"
+)
+| extend
+    SHA256_l = tolower(tostring(column_ifexists("SHA256", ""))),
+    SHA1_l = tolower(tostring(column_ifexists("SHA1", ""))),
+    MD5_l = tolower(tostring(column_ifexists("MD5", ""))),
+    InitiatingProcessSHA256_l = tolower(tostring(column_ifexists("InitiatingProcessSHA256", ""))),
+    InitiatingProcessSHA1_l = tolower(tostring(column_ifexists("InitiatingProcessSHA1", ""))),
+    InitiatingProcessMD5_l = tolower(tostring(column_ifexists("InitiatingProcessMD5", "")))
+| extend HashCandidate = pack_array(
+    SHA256_l,
+    SHA1_l,
+    MD5_l,
+    InitiatingProcessSHA256_l,
+    InitiatingProcessSHA1_l,
+    InitiatingProcessMD5_l
+)
+| mv-expand MatchedHash = HashCandidate to typeof(string)
+| where isnotempty(MatchedHash)
+| join kind=inner IOC_Hashes on MatchedHash
+| extend MatchLocation = case(
+    MatchedHash == SHA256_l, "File SHA256",
+    MatchedHash == SHA1_l, "File SHA1",
+    MatchedHash == MD5_l, "File MD5",
+    MatchedHash == InitiatingProcessSHA256_l, "Initiating Process SHA256",
+    MatchedHash == InitiatingProcessSHA1_l, "Initiating Process SHA1",
+    MatchedHash == InitiatingProcessMD5_l, "Initiating Process MD5",
+    "Unknown"
+)
+| project
+    Timestamp,
+    SourceTable,
+    DeviceName,
+    ActionType,
+    MatchLocation,
+    MatchedHash,
+    FileName,
+    FolderPath,
+    SHA256,
+    SHA1,
+    MD5,
+    ProcessCommandLine = tostring(column_ifexists("ProcessCommandLine", "")),
+    AccountName = tostring(column_ifexists("AccountName", "")),
+    InitiatingProcessFileName,
+    InitiatingProcessFolderPath,
+    InitiatingProcessCommandLine,
+    InitiatingProcessAccountName,
+    InitiatingProcessSHA256,
+    InitiatingProcessSHA1,
+    InitiatingProcessMD5,
+    ReportId,
+    DeviceId
+| sort by Timestamp desc
