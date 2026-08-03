@@ -1,3 +1,4 @@
+//Coinbase Cartel URL or Domain IOC Observed in User Click Activity
 let Lookback = 30d;
 let CoinbaseCartelIndicators =
     datatable(Protocol:string, IndicatorDomain:string, IndicatorPath:string)
