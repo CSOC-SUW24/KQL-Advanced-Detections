@@ -1,3 +1,4 @@
+//Impossible Travel - Auth Logins from multiple Destinations in a short-time span
 EntraIdSignInEvents
 | where Timestamp >= ago(7d)
 | where ErrorCode == 0
