@@ -1,0 +1,60 @@
+let lookback      = 7d;
+let maxGapSeconds = 3600;   
+let minKmh        = 900;     
+let maxFlips      = 2;      
+
+let serviceEgress = dynamic([
+    "XXX.XXX.XXX.XXX" //Your Egress interface IPs      
+]);
+// Apps that call Graph from cloud infrastructure, not from the user's device
+let serviceApps = dynamic([
+    "M365 MCP Client for Claude", "OneDrive SyncEngine",
+    "Microsoft Teams Services", "Microsoft Teams meeting add-on for Google Workspace"
+]);
+let flips =
+    EntraIdSignInEvents
+    | where Timestamp > ago(lookback)
+    | where ErrorCode == 0
+    | where isnotempty(SessionId) and isnotempty(IPAddress)
+    | where isnotempty(Country)                              // null country != country change
+    | where not(IPAddress in (serviceEgress))
+    | where not(Application in (serviceApps))
+    | sort by AccountUpn asc, SessionId asc, Timestamp asc
+    | extend PrevAccount = prev(AccountUpn), PrevSession = prev(SessionId),
+             PrevTime    = prev(Timestamp),  PrevIP      = prev(IPAddress),
+             PrevCountry = prev(Country),    PrevCity    = prev(City),
+             PrevLat     = prev(Latitude),   PrevLon     = prev(Longitude),
+             PrevUA      = prev(UserAgent),  PrevDevice  = prev(EntraIdDeviceId),
+             PrevApp     = prev(Application),PrevManaged = prev(IsManaged)
+    | where AccountUpn == PrevAccount and SessionId == PrevSession
+    | where Country != PrevCountry                           // COUNTRY change only
+    | extend GapSeconds = datetime_diff('second', Timestamp, PrevTime)
+    | where GapSeconds between (1 .. maxGapSeconds)           // 0s = parallel egress, not travel
+    | extend DistanceKm = iff(isnotempty(Latitude) and isnotempty(Longitude)
+                              and isnotempty(PrevLat) and isnotempty(PrevLon),
+             round(geo_distance_2points(todouble(PrevLon), todouble(PrevLat),
+                                        todouble(Longitude), todouble(Latitude)) / 1000, 1),
+             real(null))
+    | extend ImpliedKmh = iff(isnotnull(DistanceKm),
+                              round(DistanceKm / (todouble(GapSeconds) / 3600), 0), real(null));
+// Sessions that oscillate between countries are VPN/roaming, not hijack
+let flapping =
+    flips
+    | summarize Flips = count(), FlipCountries = make_set(Country, 10) by SessionId
+    | where Flips > maxFlips;
+flips
+| join kind=leftanti flapping on SessionId
+| where isnull(ImpliedKmh) or ImpliedKmh >= minKmh            // keep unresolved geo for triage
+| extend UAChanged     = UserAgent != PrevUA,
+         DeviceChanged  = EntraIdDeviceId != PrevDevice,
+         UnmanagedHop   = (IsManaged != 1 or PrevManaged != 1)
+| extend Severity = case(
+        ImpliedKmh >= 5000 and UAChanged and UnmanagedHop, "High",
+        ImpliedKmh >= 5000 or (UAChanged and DeviceChanged), "Medium",
+                                                             "Low")
+| project Severity, AccountUpn, SessionId, GapSeconds, DistanceKm, ImpliedKmh,
+          PrevTime, PrevIP, PrevCountry, PrevCity, PrevApp, PrevUA,
+          Timestamp, IPAddress, Country, City, Application, UserAgent,
+          ResourceDisplayName, UAChanged, DeviceChanged, UnmanagedHop,
+          IsManaged, IsCompliant, EntraIdDeviceId, ConditionalAccessStatus, CorrelationId
+| order by Severity asc, ImpliedKmh desc
