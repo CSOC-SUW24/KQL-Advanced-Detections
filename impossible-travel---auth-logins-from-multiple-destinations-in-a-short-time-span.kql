@@ -1,0 +1,50 @@
+EntraIdSignInEvents
+| where Timestamp >= ago(7d)
+| where ErrorCode == 0
+| where isnotempty(AccountUpn)
+| where isnotempty(IPAddress)
+| where isnotempty(Country)
+| summarize arg_max(Timestamp, *) by AccountUpn, IPAddress, Country, State, City, bin(Timestamp, 5m)
+| sort by AccountUpn asc, Timestamp asc
+| serialize
+| extend
+    PrevAccount = prev(AccountUpn),
+    PrevTime = prev(Timestamp),
+    PrevIP = prev(IPAddress),
+    PrevCountry = prev(Country),
+    PrevState = prev(State),
+    PrevCity = prev(City),
+    PrevApplication = prev(Application),
+    PrevClientApp = prev(ClientAppUsed),
+    PrevUserAgent = prev(UserAgent),
+    PrevRiskLevel = prev(RiskLevelAggregated),
+    PrevRiskState = prev(RiskState),
+    PrevCAStatus = prev(ConditionalAccessStatus)
+| where AccountUpn == PrevAccount
+| extend MinutesBetween = datetime_diff("minute", Timestamp, PrevTime)
+| where MinutesBetween between (0 .. 240)
+| where IPAddress != PrevIP
+| where Country != PrevCountry
+| project
+    AccountUpn,
+    AccountDisplayName,
+    PreviousTime = PrevTime,
+    PreviousIP = PrevIP,
+    PreviousLocation = strcat(PrevCountry),
+    PreviousApplication = PrevApplication,
+    PreviousClientApp = PrevClientApp,
+    PreviousRiskLevel = PrevRiskLevel,
+    PreviousRiskState = PrevRiskState,
+    PreviousCAStatus = PrevCAStatus,
+    CurrentTime = Timestamp,
+    CurrentIP = IPAddress,
+    CurrentLocation = strcat(Country),
+    CurrentApplication = Application,
+    CurrentClientApp = ClientAppUsed,
+    CurrentRiskLevel = RiskLevelAggregated,
+    CurrentRiskState = RiskState,
+    CurrentCAStatus = ConditionalAccessStatus,
+    MinutesBetween,
+    PreviousUserAgent = PrevUserAgent,
+    CurrentUserAgent = UserAgent
+| order by CurrentTime desc
