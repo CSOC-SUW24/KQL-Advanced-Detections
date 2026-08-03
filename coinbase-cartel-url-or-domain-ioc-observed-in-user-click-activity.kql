@@ -1,0 +1,71 @@
+let Lookback = 30d;
+let CoinbaseCartelIndicators =
+    datatable(Protocol:string, IndicatorDomain:string, IndicatorPath:string)
+    [
+        "http", "fjg4zi4opkxkvdz7mvwp7h6goe4tcby3hhkrz43pht4j3vakhy75znyd.onion", "/",
+        "http", "vkhztfqsjbh2in6425uvomeutn3oc4eos4264oexk57zdmntt2hoidid.onion", "/",
+        "http", "c7izex5h5shupbutwzsj73yputkqudfm7pvurawov7ciig6nkwssclad.onion", "/",
+        "http", "c5oxtg26apmuh3omkhuto22jy37rsgfifbvblvog7ur6d2rbhx7emxqd.onion", "/",
+        "http", "pa4wtlap543g2gx34nphm5lcsrwwl3wwj6nb7omwqlrj3pruf4zuufyd.onion", "/",
+        "http", "rfqsuxf2c3epm7tcxtqrsfaol3kpqe2omxfdls4lbg54ntsaazidgqid.onion", "/",
+        "http", "won2bghjatxaavvf7eoepuwj74pej764mys575xan2h2uoctxnuojyyd.onion", "/",
+        "http", "5uvjhrqzsyyg4cku6uofsu7swmkqwit3na6plsaath4g3mgikievdead.onion", "/",
+        "http", "otlnqz4lzee2xpnyy7vx6mwj6nonwgdloxeykwxulvgjwc5wzfacrzid.onion", "/",
+        "http", "uzzgphpytgr7zpb6sudyf7ryds5g3cibrhwabwpf3sd7yjkv45b7uuad.onion", "/",
+        "http", "chk4gwd4yku5jmhrqvqv4t52dwhccmi5e4ssomqreirl5wbosqdnb3qd.onion", "/",
+        "http", "iu6t4jcin7iexrdcgyspal6rsafyu4mw4tkdvugx4nmioxs7mbifdzad.onion", "/",
+        "https", "simplex.chat", "/contact/#/?v=2-7&smp=smp8.simplex.im&a=ie-SNS7kf7I0QN4162sdo7A-X5WpSEoPEtsYueFPtZQ",
+        "https", "smp18.simplex.im", "/a#gT8HD-rIsXs92qKGxvMC9Luup_jenLr83pkpfLVHF4E"
+    ]
+    | extend IndicatorUrl = strcat(Protocol, "://", IndicatorDomain, IndicatorPath)
+    | extend IndicatorUrl = trim(" \r\n\t", tolower(IndicatorUrl))
+    | extend IndicatorDomain = trim(" \r\n\t", tolower(IndicatorDomain))
+    | extend IndicatorDomain = replace_regex(IndicatorDomain, @"^www\.", "")
+    | where isnotempty(IndicatorUrl)
+        and isnotempty(IndicatorDomain);
+let CoinbaseCartelUrls =
+    CoinbaseCartelIndicators
+    | project IndicatorUrl;
+let CoinbaseCartelDomains =
+    CoinbaseCartelIndicators
+    | project IndicatorDomain
+    | union (
+        datatable(IndicatorDomain:string)
+        [
+            "affiliateshinysp1d3r.com",
+            "atomicmail.io",
+            "simplex.chat",
+            "smp8.simplex.im",
+            "smp18.simplex.im"
+        ]
+    )
+    | extend IndicatorDomain = trim(" \r\n\t", tolower(IndicatorDomain))
+    | extend IndicatorDomain = replace_regex(IndicatorDomain, @"^www\.", "")
+    | summarize by IndicatorDomain;
+UrlClickEvents
+| where Timestamp > ago(Lookback)
+| extend ClickedUrl = trim(" \r\n\t", tolower(Url))
+| extend ClickedDomain = tolower(tostring(parse_url(ClickedUrl).Host))
+| extend ClickedDomain = replace_regex(ClickedDomain, @"^www\.", "")
+| where ClickedUrl in (CoinbaseCartelUrls)
+    or ClickedDomain in (CoinbaseCartelDomains)
+| extend MatchType = case(
+    ClickedUrl in (CoinbaseCartelUrls), "Exact URL match",
+    ClickedDomain in (CoinbaseCartelDomains), "Domain match",
+    "Unknown"
+)
+| project
+    Timestamp,
+    AccountUpn,
+    IPAddress,
+    Workload,
+    ActionType,
+    IsClickedThrough,
+    MatchType,
+    ClickedUrl,
+    ClickedDomain,
+    ThreatTypes,
+    DetectionMethods,
+    NetworkMessageId,
+    ReportId
+| order by Timestamp desc
