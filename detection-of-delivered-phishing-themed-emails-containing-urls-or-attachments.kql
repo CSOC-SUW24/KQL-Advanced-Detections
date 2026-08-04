@@ -1,0 +1,93 @@
+EmailEvents
+| where Timestamp >= ago(30d)
+| where EmailDirection =~ "Inbound"
+| where DeliveryAction !~ "Blocked"
+| extend SubjectLower = tolower(tostring(Subject))
+| where SubjectLower has_any (
+    "urgent",
+    "action required",
+    "verify",
+    "verification",
+    "password",
+    "reset",
+    "mfa",
+    "authenticator",
+    "account locked",
+    "security alert",
+    "login attempt",
+    "unusual sign-in",
+    "invoice",
+    "payment",
+    "purchase order",
+    "quote",
+    "remittance",
+    "statement",
+    "shared document",
+    "document shared",
+    "docusign",
+    "signature required",
+    "voicemail",
+    "missed message",
+    "teams message",
+    "onedrive",
+    "sharepoint",
+    "help desk",
+    "it support"
+)
+| project
+    EmailTimestamp = Timestamp,
+    NetworkMessageId,
+    SenderFromAddress,
+    SenderFromDomain,
+    SenderIPv4,
+    RecipientEmailAddress,
+    Subject,
+    EmailDirection,
+    DeliveryAction,
+    DeliveryLocation,
+    ThreatTypes
+| join kind=leftouter (
+    EmailUrlInfo
+    | where Timestamp >= ago(30d)
+    | summarize
+        UrlCount = dcount(Url),
+        Urls = make_set(Url, 20)
+      by NetworkMessageId
+) on NetworkMessageId
+| join kind=leftouter (
+    EmailAttachmentInfo
+    | where Timestamp >= ago(30d)
+    | summarize
+        AttachmentCount = dcount(FileName),
+        AttachmentFileNames = make_set(FileName, 20),
+        AttachmentHashes = make_set(SHA256, 20)
+      by NetworkMessageId
+) on NetworkMessageId
+| extend
+    UrlCount = coalesce(UrlCount, 0),
+    AttachmentCount = coalesce(AttachmentCount, 0)
+| where UrlCount > 0 or AttachmentCount > 0
+| extend DetectionReason = case(
+    UrlCount > 0 and AttachmentCount > 0, "Suspicious phishing-themed email with URL and attachment",
+    UrlCount > 0, "Suspicious phishing-themed email with URL",
+    AttachmentCount > 0, "Suspicious phishing-themed email with attachment",
+    "Suspicious phishing-themed email"
+)
+| project
+    EmailTimestamp,
+    DetectionReason,
+    SenderFromAddress,
+    SenderFromDomain,
+    SenderIPv4,
+    RecipientEmailAddress,
+    Subject,
+    DeliveryAction,
+    DeliveryLocation,
+    ThreatTypes,
+    UrlCount,
+    Urls,
+    AttachmentCount,
+    AttachmentFileNames,
+    AttachmentHashes,
+    NetworkMessageId
+| order by EmailTimestamp desc
