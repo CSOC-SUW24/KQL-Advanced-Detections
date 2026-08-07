@@ -1,0 +1,123 @@
+union isfuzzy=true
+(
+    IdentityDirectoryEvents
+    | where Timestamp >= ago(30d)
+    | where ActionType has_any (
+        "Account created",
+        "Computer account created",
+        "Computer Account Created",
+        "Account modified",
+        "Computer account modified",
+        "User Account Changed",
+        "Device changed"
+    )
+    | extend TargetRaw = strcat(
+        tostring(column_ifexists("TargetAccountName", "")),
+        " ",
+        tostring(column_ifexists("TargetAccountDisplayName", "")),
+        " ",
+        tostring(column_ifexists("TargetAccountUpn", "")),
+        " ",
+        tostring(column_ifexists("AdditionalFields", ""))
+    )
+    | extend TargetRawLower = tolower(TargetRaw)
+    | where TargetRawLower has_any (
+        "$",
+        "dnshostname",
+        "samaccountname",
+        "useraccountcontrol",
+        "serviceprincipalname",
+        "msds-allowedtoactonbehalfofotheridentity",
+        "domain controller",
+        "domaincontroller"
+    )
+    | project
+        Timestamp,
+        SourceTable = "IdentityDirectoryEvents",
+        DetectionType = "Potential Machine Account or Domain Controller Attribute Manipulation",
+        DeviceName = tostring(column_ifexists("DestinationDeviceName", "")),
+        Account = coalesce(AccountUpn, AccountName),
+        Target = TargetRaw,
+        ActionType,
+        RemoteIP = tostring(column_ifexists("IPAddress", "")),
+        AdditionalDetails = strcat(
+            "Application=", tostring(column_ifexists("Application", "")),
+            " | AdditionalFields=", tostring(column_ifexists("AdditionalFields", ""))
+        )
+),
+(
+    DeviceNetworkEvents
+    | where Timestamp >= ago(30d)
+    | where ActionType == "ListeningConnectionCreated"
+    | where LocalPort in (389, 445, 636, 88)
+    | summarize
+        ListeningPorts = make_set(LocalPort, 10),
+        PortCount = dcount(LocalPort),
+        FirstSeen = min(Timestamp),
+        LastSeen = max(Timestamp)
+      by DeviceName, DeviceId
+    | where PortCount >= 2
+    | project
+        Timestamp = LastSeen,
+        SourceTable = "DeviceNetworkEvents",
+        DetectionType = "Host Listening on Multiple AD/DC-Like Services",
+        DeviceName,
+        Account = "",
+        Target = "",
+        ActionType = "ListeningConnectionCreated",
+        RemoteIP = "",
+        AdditionalDetails = strcat(
+            "FirstSeen=", tostring(FirstSeen),
+            " | ListeningPorts=", tostring(ListeningPorts)
+        )
+),
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | where Cmd has_any (
+        "lsadump::dcsync",
+        "dcsync",
+        "drsuapi",
+        "replicating directory changes",
+        "krbtgt",
+        "ntds.dit",
+        "secretsdump",
+        "impacket-secretsdump",
+        "mimikatz"
+    )
+    | project
+        Timestamp,
+        SourceTable = "DeviceProcessEvents",
+        DetectionType = "Potential DCSync or Domain Secret Extraction After Certighost-Like Abuse",
+        DeviceName,
+        Account = AccountName,
+        Target = "",
+        ActionType,
+        RemoteIP = "",
+        AdditionalDetails = strcat(
+            "FileName=", tostring(FileName),
+            " | CommandLine=", tostring(ProcessCommandLine),
+            " | Parent=", tostring(InitiatingProcessFileName),
+            " | ParentCmd=", tostring(InitiatingProcessCommandLine),
+            " | SHA256=", tostring(SHA256)
+        )
+)
+| extend Severity = case(
+    DetectionType has "DCSync", "High",
+    DetectionType has "Domain Controller Attribute", "High",
+    DetectionType has "AD/DC-Like Services", "Medium",
+    "Medium"
+)
+| project
+    Timestamp,
+    Severity,
+    SourceTable,
+    DetectionType,
+    DeviceName,
+    Account,
+    Target,
+    ActionType,
+    RemoteIP,
+    AdditionalDetails
+| order by Timestamp
