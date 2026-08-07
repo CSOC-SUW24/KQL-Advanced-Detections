@@ -1,0 +1,113 @@
+CloudAppEvents
+| where Timestamp >= ago(30d)
+| extend Raw = tostring(column_ifexists("RawEventData", ""))
+| extend AF = tostring(column_ifexists("AdditionalFields", ""))
+| extend Objects = tostring(column_ifexists("ActivityObjects", ""))
+| extend Combined = strcat(Raw, " ", AF, " ", Objects)
+| where ActionType has_any (
+    "Consent to application",
+    "Add service principal",
+    "Add app role assignment",
+    "Authorize application",
+    "Connected app authorized",
+    "OAuth app authorized",
+    "Grant consent"
+)
+or Combined has_any (
+    "oauth2permissiongrant",
+    "adminconsent",
+    "offline_access",
+    "refresh_token",
+    "Data Loader",
+    "Salesforce"
+)
+| project
+    ConsentTime = Timestamp,
+    AccountId,
+    ConsentAction = ActionType,
+    ConsentApplication = Application,
+    ConsentIPAddress = IPAddress,
+    ConsentUserAgent = UserAgent,
+    ConsentDetails = Combined
+| join kind=inner (
+    CloudAppEvents
+    | where Timestamp >= ago(30d)
+    | extend Raw2 = tostring(column_ifexists("RawEventData", ""))
+    | extend AF2 = tostring(column_ifexists("AdditionalFields", ""))
+    | extend Objects2 = tostring(column_ifexists("ActivityObjects", ""))
+    | extend Combined2 = strcat(Raw2, " ", AF2, " ", Objects2)
+    | where ActionType has_any (
+        "Read",
+        "Search",
+        "Query",
+        "Export",
+        "Download",
+        "Bulk",
+        "Bulk API",
+        "API call",
+        "Get object",
+        "List records",
+        "View report",
+        "Run report"
+    )
+    or Combined2 has_any (
+        "query",
+        "bulk",
+        "export",
+        "download",
+        "records",
+        "contacts",
+        "accounts",
+        "opportunities",
+        "cases",
+        "salesforce"
+    )
+    | project
+        ActivityTime = Timestamp,
+        AccountId,
+        ActivityApplication = Application,
+        ActivityAction = ActionType,
+        ActivityIPAddress = IPAddress,
+        ActivityUserAgent = UserAgent,
+        ActivityDetails = Combined2
+) on AccountId
+| where ActivityTime between (ConsentTime .. ConsentTime + 24h)
+| summarize
+    FollowOnActivityCount = count(),
+    FirstFollowOnActivity = min(ActivityTime),
+    LastFollowOnActivity = max(ActivityTime),
+    ActivityApps = make_set(ActivityApplication, 20),
+    ActivityActions = make_set(ActivityAction, 50),
+    ActivityIPs = make_set(ActivityIPAddress, 20),
+    SampleActivityDetails = make_set(ActivityDetails, 5)
+by
+    AccountId,
+    ConsentTime,
+    ConsentAction,
+    ConsentApplication,
+    ConsentIPAddress,
+    ConsentUserAgent,
+    ConsentDetails
+| where FollowOnActivityCount >= 5
+| extend Severity = case(
+    FollowOnActivityCount >= 100, "High",
+    FollowOnActivityCount >= 25, "Medium",
+    "Low"
+)
+| project
+    ConsentTime,
+    Severity,
+    AccountId,
+    ConsentAction,
+    ConsentApplication,
+    ConsentIPAddress,
+    ConsentUserAgent,
+    FollowOnActivityCount,
+    FirstFollowOnActivity,
+    LastFollowOnActivity,
+    ActivityApps,
+    ActivityActions,
+    ActivityIPs,
+    ConsentDetails,
+    SampleActivityDetails
+| order by ConsentTime desc
