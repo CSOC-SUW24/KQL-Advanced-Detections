@@ -1,0 +1,93 @@
+union isfuzzy=true
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Proc = tolower(tostring(FileName))
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | extend Path = tolower(tostring(FolderPath))
+    | where Proc has "trueconf"
+        or Cmd has "trueconf"
+        or Path has "trueconf"
+    | where Proc endswith ".exe"
+    | extend IsUserWritablePath = Path has_any (
+        @"\downloads\",
+        @"\desktop\",
+        @"\appdata\local\temp\",
+        @"\windows\temp\",
+        @"\users\public\"
+    )
+    | extend IsInstaller = Proc has_any (
+        "setup",
+        "install",
+        "installer",
+        "update",
+        "client"
+    )
+        or Cmd has_any (
+            "/install",
+            "/update",
+            "/silent",
+            "/verysilent",
+            "/s"
+        )
+    | extend SignatureStatus = tostring(column_ifexists("SignatureStatus", ""))
+    | where IsInstaller
+        or IsUserWritablePath
+        or SignatureStatus !~ "SignedValid"
+    | extend DetectionType = "Potential Trojanized TrueConf Installer Execution"
+    | extend Severity = case(
+        SignatureStatus !~ "SignedValid" and IsUserWritablePath, "High",
+        SignatureStatus !~ "SignedValid", "High",
+        IsUserWritablePath, "Medium",
+        "Low"
+    )
+    | project
+        Timestamp,
+        Severity,
+        DetectionType,
+        DeviceName,
+        AccountName,
+        FileName,
+        FolderPath,
+        ProcessCommandLine,
+        SignatureStatus,
+        InitiatingProcessFileName,
+        InitiatingProcessCommandLine,
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceFileEvents
+    | where Timestamp >= ago(30d)
+    | extend FileLower = tolower(tostring(FileName))
+    | extend PathLower = tolower(tostring(FolderPath))
+    | where FileLower has "trueconf"
+        or PathLower has "trueconf"
+    | where FileLower endswith ".exe"
+    | where FileLower has_any (
+        "setup",
+        "install",
+        "installer",
+        "update",
+        "client"
+    )
+    | project
+        Timestamp,
+        Severity = "Medium",
+        DetectionType = "Potential TrueConf Installer Download or Staging",
+        DeviceName,
+        AccountName = InitiatingProcessAccountName,
+        FileName,
+        FolderPath,
+        ProcessCommandLine = InitiatingProcessCommandLine,
+        SignatureStatus = "",
+        InitiatingProcessFileName,
+        InitiatingProcessCommandLine,
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+)
+| order by Timestamp desc
