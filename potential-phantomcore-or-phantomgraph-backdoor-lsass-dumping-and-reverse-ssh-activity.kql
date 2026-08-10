@@ -1,0 +1,175 @@
+union isfuzzy=true
+(
+    DeviceFileEvents
+    | where Timestamp >= ago(30d)
+    | where FileName in~ (
+        "SysExcSvc.dll",
+        "SysReadSvc.dll"
+    )
+    | project
+        Timestamp,
+        Severity = "High",
+        DetectionType = "Known PhantomGraph DLL Artifact",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        Process = InitiatingProcessFileName,
+        CommandLine = InitiatingProcessCommandLine,
+        FileName,
+        FolderPath,
+        RemoteIP = "",
+        RemoteUrl = "",
+        RemotePort = int(null),
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceImageLoadEvents
+    | where Timestamp >= ago(30d)
+    | where FileName in~ (
+        "SysExcSvc.dll",
+        "SysReadSvc.dll"
+    )
+    | project
+        Timestamp,
+        Severity = "High",
+        DetectionType = "Known PhantomGraph DLL Loaded",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        Process = InitiatingProcessFileName,
+        CommandLine = InitiatingProcessCommandLine,
+        FileName,
+        FolderPath,
+        RemoteIP = "",
+        RemoteUrl = "",
+        RemotePort = int(null),
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | where Cmd has_any (
+        "sysexcsvc.dll",
+        "sysreadsvc.dll"
+    )
+    or (
+        FileName in~ (
+            "rundll32.exe",
+            "regsvr32.exe",
+            "powershell.exe",
+            "pwsh.exe"
+        )
+        and Cmd has_any (
+            "phantomcore",
+            "phantomgraph"
+        )
+    )
+    | project
+        Timestamp,
+        Severity = "High",
+        DetectionType = "Potential PhantomCore or PhantomGraph Execution",
+        DeviceName,
+        Account = AccountName,
+        Process = FileName,
+        CommandLine = ProcessCommandLine,
+        FileName,
+        FolderPath,
+        RemoteIP = "",
+        RemoteUrl = "",
+        RemotePort = int(null),
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | where
+        (
+            Cmd has "lsass"
+            and Cmd has_any (
+                "procdump",
+                "comsvcs.dll",
+                "minidump",
+                "createdump",
+                ".dmp",
+                "rundll32"
+            )
+        )
+        or (
+            FileName in~ (
+                "ssh.exe",
+                "plink.exe",
+                "putty.exe"
+            )
+            and Cmd has_any (
+                "-r ",
+                "-l ",
+                "reverse",
+                "remote forwarding"
+            )
+        )
+    | project
+        Timestamp,
+        Severity = "High",
+        DetectionType = case(
+            Cmd has "lsass", "Potential LSASS Memory Dumping",
+            "Potential Reverse SSH Tunnel"
+        ),
+        DeviceName,
+        Account = AccountName,
+        Process = FileName,
+        CommandLine = ProcessCommandLine,
+        FileName,
+        FolderPath,
+        RemoteIP = "",
+        RemoteUrl = "",
+        RemotePort = int(null),
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceNetworkEvents
+    | where Timestamp >= ago(30d)
+    | where InitiatingProcessFileName in~ (
+        "rundll32.exe",
+        "regsvr32.exe",
+        "ssh.exe",
+        "plink.exe",
+        "powershell.exe",
+        "pwsh.exe"
+    )
+    | where RemoteUrl has_any (
+        "onedrive.live.com",
+        "api.onedrive.com",
+        "graph.microsoft.com"
+    )
+    or RemotePort == 22
+    | project
+        Timestamp,
+        Severity = "Medium",
+        DetectionType = "Potential PhantomGraph C2 or Reverse SSH Network Activity",
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        Process = InitiatingProcessFileName,
+        CommandLine = InitiatingProcessCommandLine,
+        FileName = "",
+        FolderPath = "",
+        RemoteIP,
+        RemoteUrl,
+        RemotePort,
+        SHA1 = "",
+        SHA256 = "",
+        DeviceId,
+        ReportId
+)
+| order by Timestamp desc
