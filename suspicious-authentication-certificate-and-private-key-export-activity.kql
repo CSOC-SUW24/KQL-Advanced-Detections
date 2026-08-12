@@ -1,0 +1,259 @@
+union isfuzzy=true
+(
+    DeviceProcessEvents
+    | where Timestamp >= ago(30d)
+    | extend Proc = tolower(tostring(FileName))
+    | extend Cmd = tolower(tostring(ProcessCommandLine))
+    | extend ParentProc = tolower(tostring(InitiatingProcessFileName))
+    | extend ParentCmd = tolower(tostring(InitiatingProcessCommandLine))
+    | extend ProcPath = tolower(tostring(FolderPath))
+    | extend ParentPath = tolower(tostring(InitiatingProcessFolderPath))
+    | where
+        (
+            Proc == "certutil.exe"
+            and (
+                Cmd has "-exportpfx"
+                or Cmd has "-exportcert"
+                or Cmd has "-backupkey"
+                or Cmd has "-backupdb"
+            )
+        )
+        or (
+            Proc in~ ("powershell.exe", "pwsh.exe")
+            and Cmd has_any (
+                "export-pfxcertificate",
+                "export-certificate"
+            )
+            and Cmd has_any (
+                "-filepath",
+                ".pfx",
+                ".p12",
+                "cert:\\",
+                "x509certificate2",
+                "export("
+            )
+        )
+        or (
+            Proc has "mimikatz"
+            and Cmd has_any (
+                "crypto::certificates",
+                "crypto::capi",
+                "crypto::cng"
+            )
+            and Cmd has_any (
+                "/export",
+                "export"
+            )
+        )
+        or (
+            Cmd has_any (
+                "export-aadint",
+                "export-aadinternals",
+                "get-aadintaccessTokenforaadgraph",
+                "get-aadintdevicecertificate"
+            )
+        )
+        or (
+            Proc in~ ("certipy.exe", "certipy", "python.exe", "python3.exe")
+            and Cmd has "certipy"
+            and Cmd has_any (
+                " -pfx ",
+                " export ",
+                " auth ",
+                " shadow "
+            )
+        )
+        or (
+            Proc in~ ("openssl.exe", "openssl")
+            and Cmd has "pkcs12"
+            and Cmd has "-export"
+        )
+        or (
+            Proc in~ ("certmgr.exe", "certmgr.msc")
+            and Cmd has_any (
+                ".pfx",
+                ".p12",
+                "export"
+            )
+        )
+    // Exclude common enterprise management and security response origins
+    | where not(
+        ParentProc in~ (
+            "intunemanagementextension.exe",
+            "microsoft.management.services.intunewindowsagent.exe",
+            "agentexecutor.exe",
+            "ccmexec.exe",
+            "senseir.exe",
+            "sensecm.exe",
+            "sense.exe",
+            "mssense.exe",
+            "msiexec.exe",
+            "trustedinstaller.exe"
+        )
+        or ParentCmd has_any (
+            "microsoft intune management extension",
+            "intunemanagementextension",
+            "imecache",
+            "configuration manager",
+            "ccmexec",
+            "offlinesenseir",
+            "windows defender advanced threat protection",
+            "microsoft defender for endpoint",
+            @"\datacollection\"
+        )
+        or ParentPath has_any (
+            @"\microsoft intune management extension\",
+            @"\windows defender advanced threat protection\",
+            @"\microsoft configuration manager\",
+            @"\ccm\"
+        )
+    )
+    // Exclude explicitly approved certificate-management locations
+    | where not(
+        Cmd has_any (
+            @"c:\programdata\microsoft\intunemanagementextension\",
+            @"c:\programdata\microsoft\windows defender advanced threat protection\",
+            @"c:\windows\ccm\"
+        )
+    )
+    | extend ExportMethod = case(
+        Proc == "certutil.exe" and Cmd has "-exportpfx", "CertUtil ExportPFX",
+        Proc == "certutil.exe" and Cmd has "-backupkey", "CA Private-Key Backup",
+        Proc == "certutil.exe" and Cmd has "-backupdb", "CA Database and Key Backup",
+        Proc in~ ("powershell.exe", "pwsh.exe") and Cmd has "export-pfxcertificate", "PowerShell Export-PfxCertificate",
+        Proc has "mimikatz", "Mimikatz Crypto Export",
+        Cmd has_any ("export-aadint", "export-aadinternals"), "AADInternals Certificate Export",
+        Cmd has "certipy", "Certipy Certificate Operation",
+        Proc in~ ("openssl.exe", "openssl"), "OpenSSL PKCS12 Export",
+        "Other Certificate Export"
+    )
+    | extend OutputPathRisk = case(
+        Cmd has_any (
+            @"\downloads\",
+            @"\desktop\",
+            @"\appdata\local\temp\",
+            @"\windows\temp\",
+            @"\users\public\",
+            @"\\"
+        ), "User-writable, temporary, or network path",
+        "Other or unknown path"
+    )
+    | extend Severity = case(
+        Proc has "mimikatz", "High",
+        Cmd has_any ("crypto::capi", "crypto::cng", "export-aadint", "export-aadinternals"), "High",
+        Cmd has "certipy" and Cmd has_any (" shadow ", " auth "), "High",
+        Cmd has_any (@"\downloads\", @"\desktop\", @"\temp\", @"\users\public\", @"\\"), "High",
+        Proc == "certutil.exe" and Cmd has_any ("-backupkey", "-backupdb"), "High",
+        "Medium"
+    )
+    | project
+        Timestamp,
+        Severity,
+        DetectionType = "Suspicious Private-Key Export Command",
+        ExportMethod,
+        OutputPathRisk,
+        DeviceName,
+        AccountName,
+        AccountDomain,
+        Process = FileName,
+        ProcessCommandLine,
+        FolderPath,
+        ParentProcess = InitiatingProcessFileName,
+        ParentCommandLine = InitiatingProcessCommandLine,
+        InitiatingProcessAccountName,
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+),
+(
+    DeviceFileEvents
+    | where Timestamp >= ago(30d)
+    | extend FileLower = tolower(tostring(FileName))
+    | extend PathLower = tolower(tostring(FolderPath))
+    | extend WriterProc = tolower(tostring(InitiatingProcessFileName))
+    | extend WriterCmd = tolower(tostring(InitiatingProcessCommandLine))
+    | where ActionType in~ (
+        "FileCreated",
+        "FileRenamed",
+        "FileModified"
+    )
+    | where FileLower endswith ".pfx"
+        or FileLower endswith ".p12"
+        or FileLower endswith ".p8"
+        or FileLower endswith ".pk8"
+        or FileLower endswith ".key"
+        or FileLower endswith ".pem"
+    // Require export-related command context to avoid alerting on every certificate file
+    | where WriterCmd has_any (
+        "-exportpfx",
+        "-backupkey",
+        "-backupdb",
+        "export-pfxcertificate",
+        "crypto::certificates",
+        "crypto::capi",
+        "crypto::cng",
+        "/export",
+        "export-aadint",
+        "export-aadinternals",
+        "certipy",
+        "pkcs12 -export"
+    )
+    | where not(
+        WriterProc in~ (
+            "intunemanagementextension.exe",
+            "microsoft.management.services.intunewindowsagent.exe",
+            "agentexecutor.exe",
+            "ccmexec.exe",
+            "senseir.exe",
+            "sensecm.exe",
+            "sense.exe",
+            "mssense.exe",
+            "msiexec.exe",
+            "trustedinstaller.exe"
+        )
+        or WriterCmd has_any (
+            "microsoft intune management extension",
+            "intunemanagementextension",
+            "imecache",
+            "offlinesenseir",
+            "windows defender advanced threat protection",
+            "microsoft defender for endpoint",
+            @"\datacollection\",
+            @"c:\windows\ccm\"
+        )
+    )
+    | extend IsHighRiskPath = PathLower has_any (
+        @"\downloads\",
+        @"\desktop\",
+        @"\appdata\local\temp\",
+        @"\windows\temp\",
+        @"\users\public\",
+        @"\\"
+    )
+    | extend Severity = iff(IsHighRiskPath, "High", "Medium")
+    | project
+        Timestamp,
+        Severity,
+        DetectionType = "Private-Key Container Created by Export Command",
+        ExportMethod = "Exported key file created",
+        OutputPathRisk = iff(
+            IsHighRiskPath,
+            "User-writable, temporary, or network path",
+            "Other or unknown path"
+        ),
+        DeviceName,
+        AccountName = InitiatingProcessAccountName,
+        AccountDomain = InitiatingProcessAccountDomain,
+        Process = InitiatingProcessFileName,
+        ProcessCommandLine = InitiatingProcessCommandLine,
+        FolderPath,
+        ParentProcess = "",
+        ParentCommandLine = "",
+        InitiatingProcessAccountName,
+        SHA1,
+        SHA256,
+        DeviceId,
+        ReportId
+)
+| order by Timestamp desc
