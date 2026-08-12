@@ -1,0 +1,74 @@
+union isfuzzy=true
+(
+    AlertInfo
+    | where Timestamp >= ago(90d)
+    | where Title has_any (
+        "Certighost",
+        "CVE-2026-54121",
+        "Active Directory Certificate Services attack tool activity",
+        "AD CS abuse",
+        "certificate services attack",
+        "suspicious certificate request",
+        "suspicious Kerberos ticket request",
+        "DCSync",
+        "Directory Services Replication",
+        "LDAP security principal"
+    )
+    | project
+        Timestamp,
+        SourceTable = "AlertInfo",
+        DetectionType = "Potential Certighost or AD CS Abuse Alert",
+        AlertId,
+        Title,
+        Severity,
+        Category,
+        ServiceSource,
+        DetectionSource,
+        Account = "",
+        DeviceName = "",
+        RemoteIP = "",
+        AdditionalDetails = strcat(
+            "Description=", tostring(Description),
+            " | AttackTechniques=", tostring(AttackTechniques)
+        )
+),
+(
+    AlertEvidence
+    | where Timestamp >= ago(30d)
+    | where Title has_any (
+        "Certighost",
+        "CVE-2026-54121",
+        "Active Directory Certificate Services attack tool activity",
+        "AD CS abuse",
+        "certificate services attack",
+        "suspicious certificate request",
+        "suspicious Kerberos ticket request",
+        "DCSync",
+        "Directory Services Replication",
+        "LDAP security principal"
+    )
+    | project
+        Timestamp,
+        SourceTable = "AlertEvidence",
+        DetectionType = "Potential Certighost or AD CS Abuse Alert Evidence",
+        AlertId,
+        Title,
+        Severity = "",
+        Category = "",
+        ServiceSource = "",
+        DetectionSource = "",
+        Account = AccountName,
+        DeviceName,
+        RemoteIP = coalesce(
+            tostring(column_ifexists("RemoteIP", "")),
+            tostring(column_ifexists("IPAddress", ""))
+        ),
+        AdditionalDetails = strcat(
+            "EntityType=", tostring(EntityType),
+            " | EvidenceRole=", tostring(EvidenceRole),
+            " | EvidenceDirection=", tostring(EvidenceDirection),
+            " | SHA256=", tostring(SHA256),
+            " | FileName=", tostring(FileName)
+        )
+)
+| order by Timestamp desc
