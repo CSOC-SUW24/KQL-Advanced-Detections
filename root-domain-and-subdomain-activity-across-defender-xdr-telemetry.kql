@@ -1,0 +1,100 @@
+union isfuzzy=true
+(
+    DeviceNetworkEvents
+    | where Timestamp >= ago(30d)
+    | where isnotempty(RemoteUrl)
+    | where RemoteUrl has "yourdomain.com"
+    | extend NormalizedUrl = iff(
+        RemoteUrl startswith "http://"
+            or RemoteUrl startswith "https://",
+        RemoteUrl,
+        strcat("https://", RemoteUrl)
+    )
+    | extend Host = tolower(tostring(parse_url(NormalizedUrl).Host))
+    | where Host == "yourdomain.com"
+        or Host endswith ".yourdomain.com"
+    | project
+        Timestamp,
+        SourceTable = "DeviceNetworkEvents",
+        Host,
+        DeviceName,
+        Account = InitiatingProcessAccountName,
+        Process = InitiatingProcessFileName,
+        ProcessCommandLine = InitiatingProcessCommandLine,
+        IPAddress = RemoteIP,
+        Port = RemotePort,
+        ActionType,
+        OriginalValue = RemoteUrl
+),
+(
+    EmailUrlInfo
+    | where Timestamp >= ago(30d)
+    | where isnotempty(Url)
+    | where Url has "yourdomain.com"
+    | extend NormalizedUrl = iff(
+        Url startswith "http://"
+            or Url startswith "https://",
+        Url,
+        strcat("https://", Url)
+    )
+    | extend Host = tolower(tostring(parse_url(NormalizedUrl).Host))
+    | where Host == "yourdomain.com"
+        or Host endswith ".yourdomain.com"
+    | project
+        Timestamp,
+        SourceTable = "EmailUrlInfo",
+        Host,
+        DeviceName = "",
+        Account = "",
+        Process = "",
+        ProcessCommandLine = "",
+        IPAddress = "",
+        Port = int(null),
+        ActionType = "",
+        OriginalValue = Url
+),
+(
+    CloudAppEvents
+    | where Timestamp >= ago(30d)
+    | extend EventText = strcat(
+        tostring(column_ifexists("RawEventData", "")),
+        " ",
+        tostring(column_ifexists("AdditionalFields", "")),
+        " ",
+        tostring(column_ifexists("ActivityObjects", ""))
+    )
+    | where EventText has "yourdomain.com"
+    | extend Host = tolower(
+        extract(
+            @"(?i)\b((?:[a-z0-9-]+\.)*yourdomain\.com)\b",
+            1,
+            EventText
+        )
+    )
+    | where isnotempty(Host)
+    | project
+        Timestamp,
+        SourceTable = "CloudAppEvents",
+        Host,
+        DeviceName = "",
+        Account = AccountId,
+        Process = Application,
+        ProcessCommandLine = "",
+        IPAddress = tostring(column_ifexists("IPAddress", "")),
+        Port = int(null),
+        ActionType,
+        OriginalValue = EventText
+)
+| summarize
+    EventCount = count(),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp),
+    SourceTables = make_set(SourceTable, 10),
+    Devices = make_set_if(DeviceName, isnotempty(DeviceName), 50),
+    Accounts = make_set_if(Account, isnotempty(Account), 50),
+    Processes = make_set_if(Process, isnotempty(Process), 30),
+    IPAddresses = make_set_if(IPAddress, isnotempty(IPAddress), 30),
+    Ports = make_set_if(Port, isnotnull(Port), 20),
+    SampleValues = make_set(OriginalValue, 5)
+by Host
+| order by EventCount desc
