@@ -1,0 +1,139 @@
+union isfuzzy=true
+(
+    CloudAppEvents
+    | where Timestamp >= ago(30d)
+    | where Application has "Teams"
+    | where ActionType =~ "CallParticipantDetail"
+    | extend EventData = parse_json(tostring(RawEventData))
+    | extend
+        CallerId = tostring(EventData.UserId),
+        CallerDisplayName = tostring(EventData.DisplayName),
+        Attendees = tostring(EventData.Attendees),
+        CallId = tostring(EventData.CallId),
+        ThreadId = tostring(EventData.ThreadId)
+    | extend CallerIdentity = tolower(
+        strcat(CallerId, " ", CallerDisplayName)
+    )
+    | where CallerIdentity has ".onmicrosoft.com"
+    | where CallerIdentity has_any (
+        "helpdesk",
+        "help desk",
+        "support",
+        "service desk",
+        "administrator",
+        "admin",
+        "it service",
+        "it-support",
+        "security team",
+        "microsoft support"
+    )
+    | extend CallerDomain = tostring(split(CallerId, "@")[1])
+    | project
+        Timestamp,
+        DetectionType = "Potential Teams Vishing Call",
+        Application,
+        ActionType,
+        SuspectedCaller = CallerId,
+        SuspectedCallerDisplayName = CallerDisplayName,
+        SuspectedCallerDomain = CallerDomain,
+        TargetDetails = Attendees,
+        ThreadOrCallId = iff(
+            isnotempty(CallId),
+            CallId,
+            ThreadId
+        ),
+        IPAddress = tostring(column_ifexists("IPAddress", "")),
+        CountryCode = tostring(column_ifexists("CountryCode", "")),
+        City = tostring(column_ifexists("City", "")),
+        ISP = tostring(column_ifexists("ISP", "")),
+        IsExternalUser = tostring(column_ifexists("IsExternalUser", "")),
+        IsImpersonated = tostring(column_ifexists("IsImpersonated", "")),
+        AccountId,
+        AccountDisplayName,
+        RawEventData
+),
+(
+    CloudAppEvents
+    | where Timestamp >= ago(30d)
+    | where Application =~ "Microsoft Teams"
+    | where ActionType =~ "ChatCreated"
+    | extend
+        ExternalUserFlag = tobool(column_ifexists("IsExternalUser", false)),
+        ImpersonatedFlag = tobool(column_ifexists("IsImpersonated", false))
+    | extend EventData = parse_json(tostring(RawEventData))
+    | extend
+        ThreadCreatorUpn = tostring(EventData.Members[0].UPN),
+        ThreadCreatorDisplayName = tostring(EventData.Members[0].DisplayName),
+        ThreadCreatorOrganizationId = tostring(EventData.Members[0].OrganizationId),
+        Members = tostring(EventData.Members),
+        ThreadId = tostring(EventData.ChatThreadId)
+    | extend CreatorIdentity = tolower(
+        strcat(
+            ThreadCreatorUpn,
+            " ",
+            ThreadCreatorDisplayName
+        )
+    )
+    | where ExternalUserFlag == true
+        or ImpersonatedFlag == true
+        or ThreadCreatorUpn has ".onmicrosoft.com"
+    | where CreatorIdentity has_any (
+        "helpdesk",
+        "help desk",
+        "support",
+        "service desk",
+        "administrator",
+        "admin",
+        "it service",
+        "it-support",
+        "security team",
+        "microsoft support"
+    )
+    | extend CreatorDomain = tostring(split(ThreadCreatorUpn, "@")[1])
+    | project
+        Timestamp,
+        DetectionType = "Potential External Teams Helpdesk Impersonation Chat",
+        Application,
+        ActionType,
+        SuspectedCaller = ThreadCreatorUpn,
+        SuspectedCallerDisplayName = ThreadCreatorDisplayName,
+        SuspectedCallerDomain = CreatorDomain,
+        TargetDetails = Members,
+        ThreadOrCallId = ThreadId,
+        IPAddress = tostring(column_ifexists("IPAddress", "")),
+        CountryCode = tostring(column_ifexists("CountryCode", "")),
+        City = tostring(column_ifexists("City", "")),
+        ISP = tostring(column_ifexists("ISP", "")),
+        IsExternalUser = tostring(ExternalUserFlag),
+        IsImpersonated = tostring(ImpersonatedFlag),
+        AccountId,
+        AccountDisplayName,
+        RawEventData
+)
+| extend Severity = case(
+    IsImpersonated =~ "true", "High",
+    DetectionType has "Vishing Call", "High",
+    IsExternalUser =~ "true", "Medium",
+    "Medium"
+)
+| project
+    Timestamp,
+    Severity,
+    DetectionType,
+    Application,
+    ActionType,
+    SuspectedCaller,
+    SuspectedCallerDisplayName,
+    SuspectedCallerDomain,
+    TargetDetails,
+    ThreadOrCallId,
+    IPAddress,
+    CountryCode,
+    City,
+    ISP,
+    IsExternalUser,
+    IsImpersonated,
+    AccountId,
+    AccountDisplayName,
+    RawEventData
+| order by Timestamp desc
