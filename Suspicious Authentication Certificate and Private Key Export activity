@@ -1,3 +1,4 @@
+Suspicious Authentication Certificate and Private Key Export activity
 union isfuzzy=true
 (
     DeviceProcessEvents
