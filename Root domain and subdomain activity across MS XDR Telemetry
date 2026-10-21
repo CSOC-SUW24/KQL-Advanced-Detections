@@ -1,3 +1,4 @@
+//Root domain and subdomain activity across MS XDR Telemetry
 union isfuzzy=true
 (
     DeviceNetworkEvents
