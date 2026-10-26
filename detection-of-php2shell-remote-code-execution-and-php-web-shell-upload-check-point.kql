@@ -1,0 +1,11 @@
+CommonSecurityLog
+| where TimeGenerated > ago(7d)
+| where DeviceVendor == "Check Point" and DeviceProduct == "SmartDefense"
+
+| where Activity in~ ("PHP Remote Code Execution (CVE-2026-109618; CVE-2026-109619)", "PHP Webshell Upload Over HTTP")
+    or Activity matches regex @"CVE-2026-10961[89]\b"
+    or Message matches regex @"CVE-2026-10961[89]\b"
+    or AdditionalExtensions matches regex @"CVE-2026-10961[89]\b"
+| project TimeGenerated, Activity, Message, Computer, SourceIP, DestinationIP, SourceUserName, DestinationUserName,
+          DeviceAction, DeviceEventClassID, DeviceProduct, Confidence = FlexNumber1, LogSeverity,
+          RequestMethod, RequestURL, AdditionalExtensions
