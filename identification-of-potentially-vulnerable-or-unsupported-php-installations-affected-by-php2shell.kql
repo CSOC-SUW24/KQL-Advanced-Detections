@@ -1,0 +1,13 @@
+DeviceTvmSoftwareInventory
+| where tolower(SoftwareName) matches regex @"(^|-|_)php[0-9.]*(-|_|$)"
+| extend Ver = extract(@"^(\d+\.\d+\.\d+)", 1, SoftwareVersion)
+| where isnotempty(Ver)
+| extend Branch = extract(@"^(\d+\.\d+)", 1, Ver)
+| extend FixedIn = case(Branch == "8.5", "8.5.12", Branch == "8.4", "8.4.27",
+                        Branch == "8.3", "8.3.36", Branch == "8.2", "8.2.35", "")
+| extend Status = case(FixedIn != "" and parse_version(Ver) < parse_version(FixedIn), "Below fixed version",
+                       FixedIn == "", "Unsupported branch - verify vendor backport",
+                       "At or above fixed version")
+| where Status != "At or above fixed version"
+| project DeviceId, DeviceName, OSPlatform, SoftwareName, SoftwareVersion, Branch, FixedIn, Status
+| order by Status asc, DeviceName asc
