@@ -1,0 +1,8 @@
+DeviceProcessEvents
+| where ProcessVersionInfoOriginalFileName =~ "ADNotificationManager.exe"
+    or FolderPath endswith @"\ADNotificationManager.exe"
+| where not (FolderPath contains @"\Acrobat" or FolderPath contains @"\Reader" or FolderPath contains @"\Adobe")
+| project Timestamp, DeviceName, AccountName, FileName, FolderPath,
+          ProcessVersionInfoOriginalFileName, ProcessCommandLine, SHA256,
+          InitiatingProcessFileName, InitiatingProcessCommandLine,
+          InitiatingProcessParentFileName
